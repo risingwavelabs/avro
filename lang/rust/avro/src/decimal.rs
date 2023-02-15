@@ -33,6 +33,13 @@ impl PartialEq for Decimal {
 }
 
 impl Decimal {
+    pub fn is_positive(&self) -> bool {
+        self.value.sign() != Sign::Minus
+    }
+    pub fn to_vec_unsigned(&self) -> Vec<u8> {
+        self.value.to_bytes_be().1
+    }
+
     pub(crate) fn len(&self) -> usize {
         self.len
     }
