@@ -300,7 +300,6 @@ class TetherTask(abc.ABC):
                 self._red_fkeys = [f.name for f in self.midschema.fields if not (f.order == "ignore")]
 
         except Exception as e:
-
             estr = traceback.format_exc()
             self.fail(estr)
 
@@ -318,8 +317,8 @@ class TetherTask(abc.ABC):
 
         Parameters
         ------------------------------------------------------
-        data - Sould containg the bytes encoding the serialized data
-              - I think this gets represented as a tring
+        data - Should contain the bytes encoding the serialized data
+              - I think this gets represented as a string
         count - how many input records are provided in the binary stream
         """
         try:
@@ -335,7 +334,6 @@ class TetherTask(abc.ABC):
                     self.map(inRecord, self.midCollector)
 
                 elif self.taskType == TaskType.REDUCE:
-
                     # store the previous record
                     prev = self.midRecord
 

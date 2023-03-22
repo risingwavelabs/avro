@@ -21,15 +21,8 @@ use apache_avro::{
     types::{Record, Value},
     Codec, Error, Reader, Schema, Writer,
 };
+use apache_avro_test_helper::init;
 use lazy_static::lazy_static;
-use log::debug;
-
-fn init() {
-    let _ = env_logger::builder()
-        .filter_level(log::LevelFilter::Trace)
-        .is_test(true)
-        .try_init();
-}
 
 const PRIMITIVE_EXAMPLES: &[(&str, bool)] = &[
     (r#""null""#, true),
@@ -139,6 +132,35 @@ const UNION_EXAMPLES: &[(&str, bool)] = &[
                 {"type": "array", "items": "string"}
             ]"#,
         false,
+    ),
+    // Unions with default values
+    (
+        r#"{"name": "foo", "type": ["string", "long"], "default": "bar"}"#,
+        true,
+    ),
+    (
+        r#"{"name": "foo", "type": ["long", "string"], "default": 1}"#,
+        true,
+    ),
+    (
+        r#"{"name": "foo", "type": ["null", "string"], "default": null}"#,
+        true,
+    ),
+    (
+        r#"{"name": "foo", "type": ["string", "long"], "default": 1}"#,
+        true,
+    ),
+    (
+        r#"{"name": "foo", "type": ["string", "null"], "default": null}"#,
+        true,
+    ),
+    (
+        r#"{"name": "foo", "type": ["null", "string"], "default": "null"}"#,
+        true,
+    ),
+    (
+        r#"{"name": "foo", "type": ["long", "string"], "default": "str"}"#,
+        true,
     ),
 ];
 
@@ -631,31 +653,27 @@ fn test_correct_recursive_extraction() {
                 assert_eq!("X", recursive_type.name.as_str());
             }
         } else {
-            panic!("inner schema {:?} should have been a record", inner_schema)
+            panic!("inner schema {inner_schema:?} should have been a record")
         }
     } else {
-        panic!("outer schema {:?} should have been a record", outer_schema)
+        panic!("outer schema {outer_schema:?} should have been a record")
     }
 }
 
 #[test]
 fn test_parse() {
     init();
-
     for (raw_schema, valid) in EXAMPLES.iter() {
         let schema = Schema::parse_str(raw_schema);
         if *valid {
             assert!(
                 schema.is_ok(),
-                "schema {} was supposed to be valid; error: {:?}",
-                raw_schema,
-                schema,
+                "schema {raw_schema} was supposed to be valid; error: {schema:?}",
             )
         } else {
             assert!(
                 schema.is_err(),
-                "schema {} was supposed to be invalid",
-                raw_schema
+                "schema {raw_schema} was supposed to be invalid"
             )
         }
     }
@@ -868,6 +886,7 @@ fn test_parse_reused_record_schema_by_fullname() {
             doc: _,
             ref fields,
             lookup: _,
+            attributes: _,
         } => {
             assert_eq!(name.fullname(None), "test.Weather", "Name does not match!");
 
@@ -877,9 +896,11 @@ fn test_parse_reused_record_schema_by_fullname() {
                 ref name,
                 doc: _,
                 default: _,
+                aliases: _,
                 ref schema,
                 order: _,
                 position: _,
+                custom_attributes: _,
             } = fields.get(2).unwrap();
 
             assert_eq!(name, "min_temp");
@@ -1176,7 +1197,6 @@ fn test_fullname_name_namespace_and_default_namespace_specified() {
 #[test]
 fn test_doc_attributes() {
     init();
-
     fn assert_doc(schema: &Schema) {
         match schema {
             Schema::Enum { doc, .. } => assert!(doc.is_some()),
@@ -1235,7 +1255,6 @@ fn test_other_attributes() {
 #[test]
 fn test_root_error_is_not_swallowed_on_parse_error() -> Result<(), String> {
     init();
-
     let raw_schema = r#"/not/a/real/file"#;
     let error = Schema::parse_str(raw_schema).unwrap_err();
 
@@ -1247,16 +1266,14 @@ fn test_root_error_is_not_swallowed_on_parse_error() -> Result<(), String> {
         );
         Ok(())
     } else {
-        Err(format!(
-            "Expected serde_json::error::Error, got {:?}",
-            error
-        ))
+        Err(format!("Expected serde_json::error::Error, got {error:?}"))
     }
 }
 
 // AVRO-3302
 #[test]
 fn test_record_schema_with_cyclic_references() {
+    init();
     let schema = Schema::parse_str(
         r#"
             {
@@ -1307,17 +1324,17 @@ fn test_record_schema_with_cyclic_references() {
 
     let mut writer = Writer::with_codec(&schema, Vec::new(), Codec::Null);
     if let Err(err) = writer.append(datum) {
-        panic!("An error occurred while writing datum: {:?}", err)
+        panic!("An error occurred while writing datum: {err:?}")
     }
     let bytes = writer.into_inner().unwrap();
     assert_eq!(316, bytes.len());
 
     match Reader::new(&mut bytes.as_slice()) {
         Ok(mut reader) => match reader.next() {
-            Some(value) => debug!("{:?}", value.unwrap()),
+            Some(value) => log::debug!("{:?}", value.unwrap()),
             None => panic!("No value was read!"),
         },
-        Err(err) => panic!("An error occurred while reading datum: {:?}", err),
+        Err(err) => panic!("An error occurred while reading datum: {err:?}"),
     }
 }
 
@@ -1325,6 +1342,7 @@ fn test_record_schema_with_cyclic_references() {
 // TODO: (#93) add support for logical type and attributes and uncomment (may need some tweaks to compile)
 #[test]
 fn test_decimal_valid_type_attributes() {
+    init();
     let fixed_decimal = Schema::parse_str(DECIMAL_LOGICAL_TYPE_ATTRIBUTES[0]).unwrap();
     assert_eq!(4, fixed_decimal.get_attribute("precision"));
     assert_eq!(2, fixed_decimal.get_attribute("scale"));

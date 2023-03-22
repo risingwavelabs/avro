@@ -35,11 +35,12 @@ concurrency:
 jobs:
   test:
     name: Python ${{ matrix.python }} Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
       matrix:
         python:
+        - '3.11'
         - '3.10'
         - '3.9'
         - '3.8'
@@ -49,10 +50,10 @@ jobs:
         - 'pypy-3.6'
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python }}
 
@@ -66,7 +67,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          python3 -m pip install --upgrade pip setuptools tox-wheel
+          python3 -m pip install --upgrade pip setuptools tox
 
       - name: Lint
         if: ${{ matrix.python == '3.10' }}
@@ -81,11 +82,12 @@ jobs:
 
   interop:
     name: Python ${{ matrix.python }} Interop
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
       matrix:
         python:
+        - '3.11'
         - '3.10'
         - '3.9'
         - '3.8'
@@ -95,10 +97,10 @@ jobs:
         - 'pypy-3.6'
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python }}
 
@@ -112,11 +114,11 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          python3 -m pip install --upgrade pip setuptools tox-wheel
+          python3 -m pip install --upgrade pip setuptools tox
           python3 -m pip install python-snappy zstandard
 
       - name: Cache Local Maven Repository
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}

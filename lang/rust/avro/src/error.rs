@@ -47,6 +47,9 @@ pub enum Error {
     #[error("Invalid utf-8 string")]
     ConvertToUtf8(#[source] std::string::FromUtf8Error),
 
+    #[error("Invalid utf-8 string")]
+    ConvertToUtf8Error(#[source] std::str::Utf8Error),
+
     /// Describes errors happened while validating Avro data.
     #[error("Value does not match schema")]
     Validation,
@@ -196,6 +199,9 @@ pub enum Error {
     #[error("Could not find matching type in union")]
     FindUnionVariant,
 
+    #[error("Union type should not be empty")]
+    EmptyUnion,
+
     #[error("Array({expected:?}) expected, got {other:?}")]
     GetArray {
         expected: SchemaKind,
@@ -225,6 +231,9 @@ pub enum Error {
 
     #[error("Unions cannot contain duplicate types")]
     GetUnionDuplicate,
+
+    #[error("One union type {0:?} must match the `default`'s value type {1:?}")]
+    GetDefaultUnion(SchemaKind, ValueKind),
 
     #[error("JSON value {0} claims to be u64 but cannot be converted")]
     GetU64FromJson(serde_json::Number),
@@ -424,6 +433,12 @@ pub enum Error {
         "Internal buffer not drained properly. Re-initialize the single object writer struct!"
     )]
     IllegalSingleObjectWriterState,
+
+    #[error("Codec '{0}' is not supported/enabled")]
+    CodecNotSupported(String),
+
+    #[error("Invalid Avro data! Cannot read codec type from value that is not Value::Bytes.")]
+    BadCodecMetadata,
 }
 
 impl serde::ser::Error for Error {

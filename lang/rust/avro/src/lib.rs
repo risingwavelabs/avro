@@ -604,7 +604,7 @@
 //!     let mut record = Record::new(writer.schema()).unwrap();
 //!     record.put("decimal_fixed", Decimal::from(9936.to_bigint().unwrap().to_signed_bytes_be()));
 //!     record.put("decimal_var", Decimal::from((-32442.to_bigint().unwrap()).to_signed_bytes_be()));
-//!     record.put("uuid", uuid::Uuid::new_v4());
+//!     record.put("uuid", uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap());
 //!     record.put("date", Value::Date(1));
 //!     record.put("time_millis", Value::TimeMillis(2));
 //!     record.put("time_micros", Value::TimeMicros(3));
@@ -742,11 +742,17 @@ pub use de::from_value;
 pub use decimal::Decimal;
 pub use duration::{Days, Duration, Millis, Months};
 pub use error::Error;
-pub use reader::{from_avro_datum, GenericSingleObjectReader, Reader, SpecificSingleObjectReader};
+pub use reader::{
+    from_avro_datum, from_avro_datum_schemata, read_marker, GenericSingleObjectReader, Reader,
+    SpecificSingleObjectReader,
+};
 pub use schema::{AvroSchema, Schema};
 pub use ser::to_value;
 pub use util::max_allocation_bytes;
-pub use writer::{to_avro_datum, GenericSingleObjectWriter, SpecificSingleObjectWriter, Writer};
+pub use writer::{
+    to_avro_datum, to_avro_datum_schemata, GenericSingleObjectWriter, SpecificSingleObjectWriter,
+    Writer,
+};
 
 #[cfg(feature = "derive")]
 pub use apache_avro_derive::*;
@@ -764,6 +770,7 @@ mod tests {
         types::{Record, Value},
         Codec, Reader, Schema, Writer,
     };
+    use pretty_assertions::assert_eq;
 
     //TODO: move where it fits better
     #[test]

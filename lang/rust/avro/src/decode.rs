@@ -59,7 +59,7 @@ fn decode_seq_len<R: Read>(reader: &mut R) -> AvroResult<usize> {
             std::cmp::Ordering::Equal => return Ok(0),
             std::cmp::Ordering::Less => {
                 let _size = zag_i64(reader)?;
-                -raw_len
+                raw_len.checked_neg().ok_or(Error::IntegerOverflow)?
             }
             std::cmp::Ordering::Greater => raw_len,
         })
@@ -300,6 +300,7 @@ mod tests {
         },
         Decimal,
     };
+    use pretty_assertions::assert_eq;
     use std::collections::HashMap;
 
     #[test]
@@ -343,6 +344,7 @@ mod tests {
             doc: None,
             name: Name::new("decimal").unwrap(),
             aliases: None,
+            attributes: Default::default(),
         });
         let schema = Schema::Decimal {
             inner,
@@ -369,6 +371,7 @@ mod tests {
             name: Name::new("decimal").unwrap(),
             aliases: None,
             doc: None,
+            attributes: Default::default(),
         });
         let schema = Schema::Decimal {
             inner,

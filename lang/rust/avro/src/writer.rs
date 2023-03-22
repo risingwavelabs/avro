@@ -24,7 +24,6 @@ use crate::{
     types::Value,
     AvroResult, Codec, Error,
 };
-use rand::random;
 use serde::Serialize;
 use std::{collections::HashMap, convert::TryFrom, io::Write, marker::PhantomData};
 
@@ -48,8 +47,8 @@ pub struct Writer<'a, W> {
     serializer: Serializer,
     #[builder(default = 0, setter(skip))]
     num_values: usize,
-    #[builder(default = std::iter::repeat_with(random).take(16).collect(), setter(skip))]
-    marker: Vec<u8>,
+    #[builder(default = generate_sync_marker())]
+    marker: [u8; 16],
     #[builder(default = false, setter(skip))]
     has_header: bool,
     #[builder(default)]
@@ -61,9 +60,7 @@ impl<'a, W: Write> Writer<'a, W> {
     /// to.
     /// No compression `Codec` will be used.
     pub fn new(schema: &'a Schema, writer: W) -> Self {
-        let mut w = Self::builder().schema(schema).writer(writer).build();
-        w.resolved_schema = ResolvedSchema::try_from(schema).ok();
-        w
+        Writer::with_codec(schema, writer, Codec::Null)
     }
 
     /// Creates a `Writer` with a specific `Codec` given a `Schema` and something implementing the
@@ -75,6 +72,71 @@ impl<'a, W: Write> Writer<'a, W> {
             .codec(codec)
             .build();
         w.resolved_schema = ResolvedSchema::try_from(schema).ok();
+        w
+    }
+
+    /// Creates a `Writer` with a specific `Codec` given a `Schema` and something implementing the
+    /// `io::Write` trait to write to.
+    /// If the `schema` is incomplete, i.e. contains `Schema::Ref`s then all dependencies must
+    /// be provided in `schemata`.
+    pub fn with_schemata(
+        schema: &'a Schema,
+        schemata: Vec<&'a Schema>,
+        writer: W,
+        codec: Codec,
+    ) -> Self {
+        let mut w = Self::builder()
+            .schema(schema)
+            .writer(writer)
+            .codec(codec)
+            .build();
+        w.resolved_schema = ResolvedSchema::try_from(schemata).ok();
+        w
+    }
+
+    /// Creates a `Writer` that will append values to already populated
+    /// `std::io::Write` using the provided `marker`
+    /// No compression `Codec` will be used.
+    pub fn append_to(schema: &'a Schema, writer: W, marker: [u8; 16]) -> Self {
+        Writer::append_to_with_codec(schema, writer, Codec::Null, marker)
+    }
+
+    /// Creates a `Writer` that will append values to already populated
+    /// `std::io::Write` using the provided `marker`
+    pub fn append_to_with_codec(
+        schema: &'a Schema,
+        writer: W,
+        codec: Codec,
+        marker: [u8; 16],
+    ) -> Self {
+        let mut w = Self::builder()
+            .schema(schema)
+            .writer(writer)
+            .codec(codec)
+            .marker(marker)
+            .build();
+        w.has_header = true;
+        w.resolved_schema = ResolvedSchema::try_from(schema).ok();
+        w
+    }
+
+    /// Creates a `Writer` that will append values to already populated
+    /// `std::io::Write` using the provided `marker`
+    pub fn append_to_with_codec_schemata(
+        schema: &'a Schema,
+        schemata: Vec<&'a Schema>,
+        writer: W,
+        codec: Codec,
+        marker: [u8; 16],
+    ) -> Self {
+        let mut w = Self::builder()
+            .schema(schema)
+            .writer(writer)
+            .codec(codec)
+            .marker(marker)
+            .build();
+        w.has_header = true;
+        w.resolved_schema = ResolvedSchema::try_from(schemata).ok();
         w
     }
 
@@ -111,7 +173,7 @@ impl<'a, W: Write> Writer<'a, W> {
         // Lazy init for users using the builder pattern with error throwing
         match self.resolved_schema {
             Some(ref rs) => {
-                write_value_ref_resolved(rs, value, &mut self.buffer)?;
+                write_value_ref_resolved(self.schema, rs, value, &mut self.buffer)?;
                 self.num_values += 1;
 
                 if self.buffer.len() >= self.block_size {
@@ -353,6 +415,22 @@ fn write_avro_datum<T: Into<Value>>(
     Ok(())
 }
 
+fn write_avro_datum_schemata<T: Into<Value>>(
+    schema: &Schema,
+    schemata: Vec<&Schema>,
+    value: T,
+    buffer: &mut Vec<u8>,
+) -> AvroResult<()> {
+    let avro = value.into();
+    let rs = ResolvedSchema::try_from(schemata)?;
+    let names = rs.get_names();
+    let enclosing_namespace = schema.namespace();
+    if let Some(_err) = avro.validate_internal(schema, names, &enclosing_namespace) {
+        return Err(Error::Validation);
+    }
+    encode_internal(&avro, schema, names, &enclosing_namespace, buffer)
+}
+
 /// Writer that encodes messages according to the single object encoding v1 spec
 /// Uses an API similar to the current File Writer
 /// Writes all object bytes at once, and drains internal buffer
@@ -433,7 +511,7 @@ impl<T> SpecificSingleObjectWriter<T>
 where
     T: AvroSchema + Into<Value>,
 {
-    /// Write the Into<Value> to the provided Write object. Returns a result with the number
+    /// Write the `Into<Value>` to the provided Write object. Returns a result with the number
     /// of bytes written including the header
     pub fn write_value<W: Write>(&mut self, data: T, writer: &mut W) -> AvroResult<usize> {
         let v: Value = data.into();
@@ -461,24 +539,21 @@ where
 }
 
 fn write_value_ref_resolved(
+    schema: &Schema,
     resolved_schema: &ResolvedSchema,
     value: &Value,
     buffer: &mut Vec<u8>,
 ) -> AvroResult<()> {
-    if let Some(err) = value.validate_internal(
-        resolved_schema.get_root_schema(),
-        resolved_schema.get_names(),
-    ) {
-        return Err(Error::ValidationWithReason(err));
+    match value.validate_internal(schema, resolved_schema.get_names(), &schema.namespace()) {
+        Some(err) => Err(Error::ValidationWithReason(err)),
+        None => encode_internal(
+            value,
+            schema,
+            resolved_schema.get_names(),
+            &schema.namespace(),
+            buffer,
+        ),
     }
-    encode_internal(
-        value,
-        resolved_schema.get_root_schema(),
-        resolved_schema.get_names(),
-        &None,
-        buffer,
-    )?;
-    Ok(())
 }
 
 fn write_value_ref_owned_resolved(
@@ -486,17 +561,19 @@ fn write_value_ref_owned_resolved(
     value: &Value,
     buffer: &mut Vec<u8>,
 ) -> AvroResult<()> {
+    let root_schema = resolved_schema.get_root_schema();
     if let Some(err) = value.validate_internal(
-        resolved_schema.get_root_schema(),
+        root_schema,
         resolved_schema.get_names(),
+        &root_schema.namespace(),
     ) {
         return Err(Error::ValidationWithReason(err));
     }
     encode_internal(
         value,
-        resolved_schema.get_root_schema(),
+        root_schema,
         resolved_schema.get_names(),
-        &None,
+        &root_schema.namespace(),
         buffer,
     )?;
     Ok(())
@@ -514,6 +591,41 @@ pub fn to_avro_datum<T: Into<Value>>(schema: &Schema, value: T) -> AvroResult<Ve
     Ok(buffer)
 }
 
+/// Encode a compatible value (implementing the `ToAvro` trait) into Avro format, also
+/// performing schema validation.
+/// If the provided `schema` is incomplete then its dependencies must be
+/// provided in `schemata`
+pub fn to_avro_datum_schemata<T: Into<Value>>(
+    schema: &Schema,
+    schemata: Vec<&Schema>,
+    value: T,
+) -> AvroResult<Vec<u8>> {
+    let mut buffer = Vec::new();
+    write_avro_datum_schemata(schema, schemata, value, &mut buffer)?;
+    Ok(buffer)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn generate_sync_marker() -> [u8; 16] {
+    let mut marker = [0_u8; 16];
+    std::iter::repeat_with(rand::random)
+        .take(16)
+        .enumerate()
+        .for_each(|(i, n)| marker[i] = n);
+    marker
+}
+
+#[cfg(target_arch = "wasm32")]
+fn generate_sync_marker() -> [u8; 16] {
+    let mut marker = [0_u8; 16];
+    std::iter::repeat_with(quad_rand::rand)
+        .take(4)
+        .flat_map(|i| i.to_be_bytes())
+        .enumerate()
+        .for_each(|(i, n)| marker[i] = n);
+    marker
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -524,6 +636,7 @@ mod tests {
         types::Record,
         util::zig_i64,
     };
+    use pretty_assertions::assert_eq;
     use serde::{Deserialize, Serialize};
 
     const AVRO_OBJECT_HEADER_LEN: usize = AVRO_OBJECT_HEADER.len();
@@ -673,6 +786,7 @@ mod tests {
             aliases: None,
             doc: None,
             size,
+            attributes: Default::default(),
         };
         let value = vec![0u8; size];
         logical_type_test(
@@ -712,6 +826,7 @@ mod tests {
             aliases: None,
             doc: None,
             size: 12,
+            attributes: Default::default(),
         };
         let value = Value::Duration(Duration::new(
             Months::new(256),
@@ -1026,10 +1141,7 @@ mod tests {
             Err(e @ Error::FileHeaderAlreadyWritten) => {
                 assert_eq!(e.to_string(), "The file metadata is already flushed.")
             }
-            Err(e) => panic!(
-                "Unexpected error occurred while writing user metadata: {:?}",
-                e
-            ),
+            Err(e) => panic!("Unexpected error occurred while writing user metadata: {e:?}"),
             Ok(_) => panic!("Expected an error that metadata cannot be added after adding data"),
         }
     }
@@ -1042,11 +1154,10 @@ mod tests {
         let key = "avro.stringKey".to_string();
         match writer.add_user_metadata(key.clone(), "value") {
             Err(ref e @ Error::InvalidMetadataKey(_)) => {
-                assert_eq!(e.to_string(), format!("Metadata keys starting with 'avro.' are reserved for internal usage: {}.", key))
+                assert_eq!(e.to_string(), format!("Metadata keys starting with 'avro.' are reserved for internal usage: {key}."))
             }
             Err(e) => panic!(
-                "Unexpected error occurred while writing user metadata with reserved prefix ('avro.'): {:?}",
-                e
+                "Unexpected error occurred while writing user metadata with reserved prefix ('avro.'): {e:?}"
             ),
             Ok(_) => panic!("Expected an error that the metadata key cannot be prefixed with 'avro.'"),
         }
