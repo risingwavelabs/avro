@@ -437,8 +437,8 @@ impl<'s> ResolvedSchema<'s> {
         &self.names_ref
     }
 
-    pub fn to_resolved(&self) -> AvroResult<Schema> {
-        Self::to_resolved_internal(self.root_schema, &self.names_ref, &None)
+    pub fn to_resolved(&self, schema: &'s Schema) -> AvroResult<Schema> {
+        Self::to_resolved_internal(schema, &self.names_ref, &None)
     }
 
     fn to_resolved_internal(
@@ -477,6 +477,7 @@ impl<'s> ResolvedSchema<'s> {
                 aliases,
                 doc,
                 lookup,
+                attributes,
             } => {
                 let fully_qualified_name = name.fully_qualified_name(enclosing_namespace);
                 let mut resolved = Vec::new();
@@ -493,6 +494,8 @@ impl<'s> ResolvedSchema<'s> {
                         default: field.default.clone(),
                         order: field.order.clone(),
                         position: field.position.clone(),
+                        aliases: field.aliases.clone(),
+                        custom_attributes: field.custom_attributes.clone(),
                     });
                 }
                 Ok(Schema::Record {
@@ -501,6 +504,7 @@ impl<'s> ResolvedSchema<'s> {
                     aliases: aliases.clone(),
                     doc: doc.clone(),
                     lookup: lookup.clone(),
+                    attributes: attributes.clone(),
                 })
             }
             Schema::Ref { name } => {
