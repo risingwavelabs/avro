@@ -445,6 +445,83 @@ impl<'s> ResolvedSchema<'s> {
         &self.names_ref
     }
 
+    pub fn to_resolved(&self) -> AvroResult<Schema> {
+        Self::to_resolved_internal(self.root_schema, &self.names_ref, &None)
+    }
+
+    fn to_resolved_internal(
+        schema: &'s Schema,
+        names_ref: &NamesRef<'s>,
+        enclosing_namespace: &Namespace,
+    ) -> AvroResult<Schema> {
+        match schema {
+            Schema::Array(schema) => Ok(Schema::Array(
+                Self::to_resolved_internal(schema, names_ref, enclosing_namespace)?.into(),
+            )),
+            Schema::Map(schema) => Ok(Schema::Map(
+                Self::to_resolved_internal(schema, names_ref, enclosing_namespace)?.into(),
+            )),
+            Schema::Union(UnionSchema {
+                schemas,
+                variant_index,
+            }) => {
+                let mut resolved = Vec::new();
+                for schema in schemas {
+                    resolved.push(Self::to_resolved_internal(
+                        schema,
+                        names_ref,
+                        enclosing_namespace,
+                    )?);
+                }
+                Ok(Schema::Union(UnionSchema {
+                    schemas: resolved,
+                    variant_index: variant_index.clone(),
+                }))
+            }
+
+            Schema::Record {
+                name,
+                fields,
+                aliases,
+                doc,
+                lookup,
+            } => {
+                let fully_qualified_name = name.fully_qualified_name(enclosing_namespace);
+                let mut resolved = Vec::new();
+                let record_namespace = fully_qualified_name.namespace;
+                for field in fields {
+                    resolved.push(RecordField {
+                        schema: Self::to_resolved_internal(
+                            &field.schema,
+                            names_ref,
+                            &record_namespace,
+                        )?,
+                        name: field.name.clone(),
+                        doc: field.doc.clone(),
+                        default: field.default.clone(),
+                        order: field.order.clone(),
+                        position: field.position.clone(),
+                    });
+                }
+                Ok(Schema::Record {
+                    name: name.clone(),
+                    fields: resolved,
+                    aliases: aliases.clone(),
+                    doc: doc.clone(),
+                    lookup: lookup.clone(),
+                })
+            }
+            Schema::Ref { name } => {
+                let fully_qualified_name = name.fully_qualified_name(enclosing_namespace);
+                let r = names_ref
+                    .get(&fully_qualified_name)
+                    .ok_or(Error::SchemaResolutionError(fully_qualified_name))?;
+                Ok((*r).clone())
+            }
+            other => Ok(other.clone()),
+        }
+    }
+
     /// Creates `ResolvedSchema` with some already known schemas.
     ///
     /// Those schemata would be used to resolve references if needed.
