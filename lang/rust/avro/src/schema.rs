@@ -444,14 +444,14 @@ impl<'s> ResolvedSchema<'s> {
                 }))
             }
 
-            Schema::Record {
+            Schema::Record(RecordSchema {
                 name,
                 fields,
                 aliases,
                 doc,
                 lookup,
                 attributes,
-            } => {
+            }) => {
                 let fully_qualified_name = name.fully_qualified_name(enclosing_namespace);
                 let mut resolved = Vec::new();
                 let record_namespace = fully_qualified_name.namespace;
@@ -466,19 +466,19 @@ impl<'s> ResolvedSchema<'s> {
                         doc: field.doc.clone(),
                         default: field.default.clone(),
                         order: field.order.clone(),
-                        position: field.position.clone(),
+                        position: field.position,
                         aliases: field.aliases.clone(),
                         custom_attributes: field.custom_attributes.clone(),
                     });
                 }
-                Ok(Schema::Record {
+                Ok(Schema::Record(RecordSchema {
                     name: name.clone(),
                     fields: resolved,
                     aliases: aliases.clone(),
                     doc: doc.clone(),
                     lookup: lookup.clone(),
                     attributes: attributes.clone(),
-                })
+                }))
             }
             Schema::Ref { name } => {
                 let fully_qualified_name = name.fully_qualified_name(enclosing_namespace);
