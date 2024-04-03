@@ -749,18 +749,10 @@ impl Value {
         };
         match self {
             Value::Decimal(num) => {
-                let num_bytes = num.len();
-                if max_prec_for_len(num_bytes)? < precision {
-                    Err(Error::ComparePrecisionAndSize {
-                        precision,
-                        num_bytes,
-                    })
-                } else {
-                    Ok(Value::Decimal(num))
-                }
+                Ok(Value::Decimal(num))
                 // check num.bits() here
             }
-            Value::Fixed(_, bytes) | Value::Bytes(bytes) => {
+            Value::Fixed(_, bytes) => {
                 if max_prec_for_len(bytes.len())? < precision {
                     Err(Error::ComparePrecisionAndSize {
                         precision,
@@ -770,6 +762,10 @@ impl Value {
                     // precision and scale match, can we assume the underlying type can hold the data?
                     Ok(Value::Decimal(Decimal::from(bytes)))
                 }
+            }
+            Value::Bytes(bytes) => {
+                // precision and scale match, can we assume the underlying type can hold the data?
+                Ok(Value::Decimal(Decimal::from(bytes)))
             }
             other => Err(Error::ResolveDecimal(other.into())),
         }
