@@ -133,7 +133,7 @@ pub enum Error {
     #[error("Unable to convert to u8, got {0:?}")]
     GetU8(ValueKind),
 
-    #[error("Precision {precision} too small to hold decimal values with {num_bytes} bytes")]
+    #[error("Fixed {num_bytes} bytes too small to hold decimal values with precision {precision}")]
     ComparePrecisionAndSize { precision: usize, num_bytes: usize },
 
     #[error("Cannot convert length to i32: {1}")]
