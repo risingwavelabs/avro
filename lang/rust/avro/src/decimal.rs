@@ -39,6 +39,9 @@ impl Decimal {
     pub fn to_vec_unsigned(&self) -> Vec<u8> {
         self.value.to_bytes_be().1
     }
+    pub fn precision(&self) -> usize {
+        self.value.to_radix_le(10).1.len()
+    }
 
     pub(crate) fn len(&self) -> usize {
         self.len
