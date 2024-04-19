@@ -272,13 +272,7 @@ impl From<JsonValue> for Value {
         match value {
             JsonValue::Null => Self::Null,
             JsonValue::Bool(b) => b.into(),
-            JsonValue::Number(ref n) if n.is_i64() => {
-                let n = n.as_i64().unwrap();
-                match n.try_into() {
-                    Ok(n) => Value::Int(n),
-                    Err(_) => Value::Long(n),
-                }
-            }
+            JsonValue::Number(ref n) if n.is_i64() => Value::Long(n.as_i64().unwrap()),
             JsonValue::Number(ref n) if n.is_f64() => Value::Double(n.as_f64().unwrap()),
             JsonValue::Number(n) => Value::Long(n.as_u64().unwrap() as i64), // TODO: Not so great
             JsonValue::String(s) => s.into(),
