@@ -861,10 +861,14 @@ impl Value {
         }
     }
 
+    fn to_constrained_utf16(s: &str) -> Vec<u8> {
+        s.encode_utf16().map(|u| u.to_le_bytes()[0]).collect()
+    }
+
     fn resolve_bytes(self) -> Result<Self, Error> {
         match self {
             Value::Bytes(bytes) => Ok(Value::Bytes(bytes)),
-            Value::String(s) => Ok(Value::Bytes(s.into_bytes())),
+            Value::String(s) => Ok(Value::Bytes(Self::to_constrained_utf16(&s))),
             Value::Array(items) => Ok(Value::Bytes(
                 items
                     .into_iter()
@@ -878,9 +882,10 @@ impl Value {
     fn resolve_string(self) -> Result<Self, Error> {
         match self {
             Value::String(s) => Ok(Value::String(s)),
-            Value::Bytes(bytes) | Value::Fixed(_, bytes) => Ok(Value::String(
-                String::from_utf8(bytes).map_err(Error::ConvertToUtf8)?,
-            )),
+            // Be conservative for now. It is NOT UTF8.
+            // Value::Bytes(bytes) | Value::Fixed(_, bytes) => Ok(Value::String(
+            //     String::from_utf8(bytes).map_err(Error::ConvertToUtf8)?,
+            // )),
             other => Err(Error::GetString(other.into())),
         }
     }
@@ -894,7 +899,10 @@ impl Value {
                     Err(Error::CompareFixedSizes { size, n })
                 }
             }
-            Value::String(s) => Ok(Value::Fixed(s.len(), s.into_bytes())),
+            Value::String(s) => {
+                let bytes = Self::to_constrained_utf16(&s);
+                Ok(Value::Fixed(bytes.len(), bytes))
+            }
             other => Err(Error::GetStringForFixed(other.into())),
         }
     }
@@ -1582,27 +1590,27 @@ Field with name '"b"' is not a member of the map items"#,
         Ok(())
     }
 
-    #[test]
-    fn resolve_string_from_bytes() -> TestResult {
-        let value = Value::Bytes(vec![97, 98, 99]);
-        assert_eq!(
-            value.resolve(&Schema::String)?,
-            Value::String("abc".to_string())
-        );
+    // #[test]
+    // fn resolve_string_from_bytes() -> TestResult {
+    //     let value = Value::Bytes(vec![97, 98, 99]);
+    //     assert_eq!(
+    //         value.resolve(&Schema::String)?,
+    //         Value::String("abc".to_string())
+    //     );
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    #[test]
-    fn resolve_string_from_fixed() -> TestResult {
-        let value = Value::Fixed(3, vec![97, 98, 99]);
-        assert_eq!(
-            value.resolve(&Schema::String)?,
-            Value::String("abc".to_string())
-        );
+    // #[test]
+    // fn resolve_string_from_fixed() -> TestResult {
+    //     let value = Value::Fixed(3, vec![97, 98, 99]);
+    //     assert_eq!(
+    //         value.resolve(&Schema::String)?,
+    //         Value::String("abc".to_string())
+    //     );
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     #[test]
     fn resolve_bytes_failure() {
@@ -2923,6 +2931,42 @@ Field with name '"b"' is not a member of the map items"#,
             resolve_result.is_ok(),
             "resolve result must be ok, got: {resolve_result:?}"
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bytes_default() -> TestResult {
+        let old_schema = Schema::parse_str(r#"{"type":"record","name":"Root","fields":[]}"#)?;
+
+        for (input, expected) in [
+            (r#" "default": "\u00FF" "#, &[0xffu8] as &[u8]),
+            (r#" "default": "\uD834\uDD1E" "#, &[0x34, 0x1e]),
+        ] {
+            let schema = format!(
+                r#"{{
+                "type": "record",
+                "name": "Root",
+                "fields": [
+                    {{
+                        "name": "f0",
+                        "type": "bytes",
+                        {input}
+                    }}
+                ]
+            }}"#
+            );
+            let root = Schema::parse_str(&schema)?;
+            let actual = crate::from_avro_datum(&old_schema, &mut std::io::empty(), Some(&root))?;
+            let actual = match &actual {
+                Value::Record(vals) => match &vals[0].1 {
+                    Value::Bytes(b) => b.as_slice(),
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            };
+            assert_eq!(expected, actual);
+        }
 
         Ok(())
     }
