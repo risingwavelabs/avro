@@ -270,7 +270,7 @@ fn test_default_value() -> TestResult {
         match default_datum {
             Value::Double(f) if f.is_nan() => {
                 let Value::Record(fields) = datum_read else {
-                    panic!()
+                    unreachable!("the test always constructs top level as record")
                 };
                 let Value::Double(f) = fields[0].1 else {
                     panic!("double expected")
