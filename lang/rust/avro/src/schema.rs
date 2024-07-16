@@ -520,7 +520,7 @@ impl<'s> ResolvedSchema<'s> {
                 let r = names_ref
                     .get(&fully_qualified_name)
                     .ok_or(Error::SchemaResolutionError(fully_qualified_name))?;
-                Ok((*r).clone())
+                Self::to_resolved_internal(*r, names_ref, enclosing_namespace)
             }
             other => Ok(other.clone()),
         }
