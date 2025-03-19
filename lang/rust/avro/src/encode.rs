@@ -85,7 +85,7 @@ pub(crate) fn encode_internal<S: Borrow<Schema>>(
         Value::Decimal(decimal) => match schema {
             Schema::Decimal(DecimalSchema { inner, .. }) => match *inner.clone() {
                 Schema::Fixed(FixedSchema { size, .. }) => {
-                    let bytes = decimal.to_sign_extended_bytes_with_len(size).unwrap();
+                    let bytes = decimal.to_sign_extended_bytes_with_len(size)?;
                     let num_bytes = bytes.len();
                     if num_bytes != size {
                         return Err(Error::EncodeDecimalAsFixedError(num_bytes, size));
@@ -846,5 +846,26 @@ pub(crate) mod tests {
         let encoded = encode(&value, &schema, &mut buffer);
         assert!(encoded.is_ok());
         assert!(!buffer.is_empty());
+    }
+
+    #[test]
+    fn test_avro_xxxx_encode_decimal_fixed_overflow() {
+        use crate::Decimal;
+        let value = Value::Decimal(Decimal::from(&[0x00u8, 0x12, 0x34, 0x56]));
+        let schema = Schema::parse_str(
+            r#"{
+                "type": "fixed",
+                "name": "MyDecimal",
+                "size": 2,
+                "logicalType": "decimal",
+                "precision": 4,
+                "scale": 2
+            }"#,
+        )
+        .unwrap();
+        let mut buffer = Vec::new();
+        let encoded = encode(&value, &schema, &mut buffer);
+        let err = encoded.unwrap_err();
+        assert!(matches!(err, Error::SignExtend { .. }));
     }
 }
